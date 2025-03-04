@@ -1,6 +1,5 @@
 function processTrainingEmails() {
   var calendarName = "Szkolenia Izba"; // Nazwa kalendarza
-  var taskListName = "szkolenia izba"; // Nazwa listy zadań
   var searchQuery = 'subject:"Zapis na szkolenie ONLINE - " is:unread'; // Wyszukiwanie nieprzeczytanych maili o szkoleniach
   
   // Pobranie wiadomości e-mail pasujących do zapytania
@@ -35,44 +34,42 @@ function processTrainingEmails() {
       var linkMatch = body.match(/https:\/\/portal\.piib\.org\.pl\/a\/[a-zA-Z0-9]+/);
       var eventLink = linkMatch ? linkMatch[0] : "Brak linku";
 
-      // Tworzenie wydarzenia w kalendarzu
+      // Obliczenie różnicy dni między datą rozpoczęcia a zakończenia
+      var timeDiff = endDateTime.getTime() - startDateTime.getTime();
+      var dayDiff = timeDiff / (1000 * 3600 * 24);
+
       var calendar = CalendarApp.getCalendarsByName(calendarName)[0];
       if (!calendar) {
         calendar = CalendarApp.createCalendar(calendarName);
       }
       
-      calendar.createEvent(eventName, startDateTime, endDateTime, {
-        description: "Link do wydarzenia: " + eventLink,
-        reminders: [{method: "popup", minutes: 30}] // Poprawiono metodę przypomnienia
-      });
-      
-      // Dodanie zadania do listy zadań
-      try {
-        var taskLists = Tasks.Tasklists.list().items;
-        var taskListId;
-        
-        for (var k = 0; k < taskLists.length; k++) {
-          if (taskLists[k].title === taskListName) {
-            taskListId = taskLists[k].id;
-            break;
-          }
-        }
-        
-        if (!taskListId) {
-          throw new Error("Lista zadań '" + taskListName + "' nie została znaleziona.");
-        }
-        
-        Tasks.Tasks.insert({
-          title: eventName,
-          due: endDateTime.toISOString()
-        }, taskListId);
-        
-      } catch (e) {
-        Logger.log("Błąd podczas dodawania zadania: " + e.message);
+      // Sprawdzenie, czy wydarzenie trwa więcej niż 1 dzień
+      if (dayDiff >= 1) {
+        // Utworzenie wydarzenia na pierwszy dzień
+        var firstDayEnd = new Date(startDateTime.getTime() + 2 * 60 * 60 * 1000); // 2 godziny po starcie
+        calendar.createEvent(eventName + " (Dzień 1)", startDateTime, firstDayEnd, {
+          description: "Link do wydarzenia: " + eventLink,
+          reminders: [{method: "popup", minutes: 30}]
+        });
+
+        // Utworzenie wydarzenia na drugi dzień
+        var secondDayStart = new Date(endDateTime.getTime() - 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000); // 2 godziny przed końcem ostatniego dnia
+        calendar.createEvent(eventName + " (Dzień 2)", secondDayStart, endDateTime, {
+          description: "Link do wydarzenia: " + eventLink,
+          reminders: [{method: "popup", minutes: 30}]
+        });
+      } else {
+        // Utworzenie pojedynczego wydarzenia
+        calendar.createEvent(eventName, startDateTime, endDateTime, {
+          description: "Link do wydarzenia: " + eventLink,
+          reminders: [{method: "popup", minutes: 30}]
+        });
       }
 
-      // Oznaczenie wiadomości jako przeczytanej
-      message.markRead();
+      // Oznaczenie wiadomości jako przeczytanej, dodanie kategorii i archiwizacja
+      message.markRead(); // Oznacz jako przeczytaną
+      threads[i].addLabel(GmailApp.getUserLabelByName("szkolenia")); // Dodaj kategorię szkolenia
+      threads[i].moveToArchive(); // Archiwizuj wiadomość
     }
   }
 }
