@@ -1,0 +1,78 @@
+function processTrainingEmails() {
+  var calendarName = "Szkolenia Izba"; // Nazwa kalendarza
+  var taskListName = "szkolenia izba"; // Nazwa listy zadań
+  var searchQuery = 'subject:"Zapis na szkolenie ONLINE - " is:unread'; // Wyszukiwanie nieprzeczytanych maili o szkoleniach
+  
+  // Pobranie wiadomości e-mail pasujących do zapytania
+  var threads = GmailApp.search(searchQuery);
+  
+  for (var i = 0; i < threads.length; i++) {
+    var messages = threads[i].getMessages();
+    
+    for (var j = 0; j < messages.length; j++) {
+      var message = messages[j];
+      var subject = message.getSubject();
+      var body = message.getBody();
+      
+      // Wyodrębnienie nazwy wydarzenia z tematu wiadomości
+      var eventNameMatch = subject.match(/Zapis na szkolenie ONLINE - (.+)/);
+      if (!eventNameMatch) continue;
+      var eventName = eventNameMatch[1].trim();
+      
+      // Wyodrębnienie daty i godziny wydarzenia
+      var dateTimeMatch = body.match(/(\d{4}-\d{2}-\d{2}) od (\d{2}:\d{2}) do (\d{2}:\d{2})/);
+      if (!dateTimeMatch) continue;
+      
+      var eventDate = dateTimeMatch[1]; // Data wydarzenia (YYYY-MM-DD)
+      var startTime = dateTimeMatch[2]; // Czas rozpoczęcia (HH:MM)
+      var endTime = dateTimeMatch[3];   // Czas zakończenia (HH:MM)
+      
+      // Konwersja daty i czasu na obiekty Date
+      var startDateTime = new Date(eventDate + "T" + startTime + ":00");
+      var endDateTime = new Date(eventDate + "T" + endTime + ":00");
+      
+      // Znalezienie linku do wydarzenia
+      var linkMatch = body.match(/https:\/\/portal\.piib\.org\.pl\/a\/[a-zA-Z0-9]+/);
+      var eventLink = linkMatch ? linkMatch[0] : "Brak linku";
+
+      // Tworzenie wydarzenia w kalendarzu
+      var calendar = CalendarApp.getCalendarsByName(calendarName)[0];
+      if (!calendar) {
+        calendar = CalendarApp.createCalendar(calendarName);
+      }
+      
+      calendar.createEvent(eventName, startDateTime, endDateTime, {
+        description: "Link do wydarzenia: " + eventLink,
+        reminders: [{method: "popup", minutes: 30}] // Poprawiono metodę przypomnienia
+      });
+      
+      // Dodanie zadania do listy zadań
+      try {
+        var taskLists = Tasks.Tasklists.list().items;
+        var taskListId;
+        
+        for (var k = 0; k < taskLists.length; k++) {
+          if (taskLists[k].title === taskListName) {
+            taskListId = taskLists[k].id;
+            break;
+          }
+        }
+        
+        if (!taskListId) {
+          throw new Error("Lista zadań '" + taskListName + "' nie została znaleziona.");
+        }
+        
+        Tasks.Tasks.insert({
+          title: eventName,
+          due: endDateTime.toISOString()
+        }, taskListId);
+        
+      } catch (e) {
+        Logger.log("Błąd podczas dodawania zadania: " + e.message);
+      }
+
+      // Oznaczenie wiadomości jako przeczytanej
+      message.markRead();
+    }
+  }
+}
